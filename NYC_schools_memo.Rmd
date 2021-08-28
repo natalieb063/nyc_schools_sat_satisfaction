@@ -1,0 +1,121 @@
+---
+title: "NYC Schools Academic Satisfaction and Performance"
+author: "Natalie Brown"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  word_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(readr)
+library(tinytex)
+combined <- read.csv("/Users/nataliebrown/Learning R/dataquest_guided_project_3/combined.csv", header=TRUE, stringsAsFactors=FALSE)
+school_survey_gen_ed <- read_tsv("/Users/nataliebrown/Learning R/dataquest_guided_project_3/2011 data files online/masterfile11_gened_final.txt")
+school_survey_spec_ed <- read_tsv("/Users/nataliebrown/Learning R/dataquest_guided_project_3/2011 data files online/masterfile11_d75_final.txt")
+
+```
+
+## Introduction
+
+This memo describes an analysis of various metrics at NYC public schools, including socioeconomic indicators, standardized test scores, and quality perceptions from educators, parents and students. This analysis seeks to explore if community perceptions of educational quality correlate with student academic success. This analysis will also seek to understand whether or not perceptions from educators are in line with the perceptions of families. 
+
+Data from the 2011 NYC Schools Survey and all other datasets (which are described in detail below) used for this analysis were downloaded from [NYC Open Data](https://data.cityofnewyork.us), an open resource updated by the City of New York. 
+
+The [NYC Schools Survey](https://data.cityofnewyork.us/Education/2011-NYC-School-Survey/mnz3-dyi8), which received 960,191 submissions in 2011, is open to the families of students in grades 6 though 12. Survey questions from the 2011 NYC Schools Survey were separated into four categories: Safety and Respect, Academic Expectations, Communication and Engagement. Parents, students, and educators were surveyed on these four topics. Average responses were aggregated by school and category, and aggregated total for all four scores  was calculated to contribute to school ratings. Additional information on survey response data can be found in the *Survey Data Dictionary.xls file*. 
+
+This analysis also uses six additional data sets from the New York Department of Education, which contains Data of Scholastic Aptitude Test (SAT) and Advanced Placement (AP) scores, class sizes, demographics on NYC school students, graduation outcomes, and location/borough information. Additional information on each data set can be found in the metadata of each resource below:
+
+* [SAT (College Board) 2010 School Level Test Results](https://data.cityofnewyork.us/Education/SAT-College-Board-2010-School-Level-Results/zt9s-n5aj)
+* [2010 AP (College Board) School Level Results](https://data.cityofnewyork.us/Education/2010-AP-College-Board-School-Level-Results/itfs-ms3e)
+* [2010- 2011 Class Size - School-Level Detail](https://data.cityofnewyork.us/Education/2010-2011-Class-Size-School-level-detail/urz7-pzb3)
+* [2006 - 2012 School Demographics Accountability Snapshot](https://data.cityofnewyork.us/Education/2006-2012-School-Demographics-and-Accountability-S/ihfw-zy9j)
+* [2005-2010 Graduation Outcomes - School Level](https://data.cityofnewyork.us/Education/2005-2010-Graduation-Outcomes-School-Level/vh2h-md7a)
+* [2014-2015 DOE High School Directory](https://data.cityofnewyork.us/Education/2014-2015-DOE-High-School-Directory/n3p6-zve2)
+
+This analysis was performed in R, and used the `tidyverse` and `readr` packages.
+```{r data cleaning, include=FALSE}
+
+#selecting variables for general education and special education school respondents 
+
+school_survey_gen_ed <- school_survey_gen_ed %>%
+  select(dbn, schoolname, studentssurveyed, schooltype, saf_tot_11, saf_p_11, saf_t_11, saf_s_11, com_p_11, eng_p_11, eng_t_11, eng_s_11, eng_tot_11, com_t_11, com_s_11, com_tot_11, aca_p_11, aca_t_11, aca_s_11, aca_tot_11) %>%
+  filter(studentssurveyed == "Yes" & schooltype == "High School")
+
+school_survey_spec_ed <- school_survey_spec_ed %>%
+  select(dbn, schoolname, studentssurveyed, schooltype, saf_tot_11, saf_p_11, saf_t_11, saf_s_11, com_p_11, eng_p_11, eng_t_11, eng_s_11,
+         eng_tot_11, com_t_11, com_s_11, com_tot_11, aca_p_11, aca_t_11, aca_s_11, aca_tot_11) %>%
+  filter(studentssurveyed == "Yes")
+
+# binding the data sets and renaming variables 
+
+school_survey_combined <- rbind(school_survey_gen_ed, school_survey_spec_ed)
+
+combined <- combined %>%
+  rename(dbn = DBN)
+
+school_survey_combined <- school_survey_combined %>%
+  rename(school_name = schoolname)
+
+combined_2 <- left_join(combined, school_survey_combined, by = "dbn")
+
+#filtering combined data set to remove NAs in `avg_sat_score` and `frl_percent
+
+combined_2 <- combined_2 %>%
+  filter(studentssurveyed == "Yes" & !is.na(combined_2$avg_sat_score))
+
+#observing correlations
+
+cor_mat <- combined_2 %>%
+  select(avg_sat_score, aca_p_11, aca_t_11, aca_s_11) %>%
+  cor(use = "pairwise.complete.obs")
+
+cor_tib <- cor_mat %>%
+  as_tibble(rownames = "variable")
+
+sat_aca_tib <- combined_2 %>%
+  pivot_longer(
+    cols = c(aca_p_11, aca_t_11, aca_s_11),
+    names_to = "review type",
+    values_to = "response"
+  )
+
+
+```
+
+## Respondent Academic Satisfaction and SAT Scores
+
+To answer the question of whether or not a relationship exists between academic performance and academic community satisfaction, three specifications were imposed to include as much usable data as possible:
+
+1. **Academic performance was based on SAT scores.** Because AP scores were reported by less schools, SAT scores were a more accessible metric. This may be because many schools do not have the resources to offer AP courses and to host exams, which could skew data towards wealthier schools. SAT scores were a more equitable option.
+1. **Responses included were focused on the Academic Expectations questions of the survey.** In order to explore student, parent, and teacher perceptions of academic rigor in their schools, responses from other categories were omitted. 
+
+After binding the data sets and narrowing focus to SAT scores and responses to Academic Expectation questions in the survey, the final data set includes 342 schools in the five boroughs. A low but statistically significant positive correlation between SAT Scores and Academic Expectation Responses was observed for Students (0.293). The scatter plots below expand on the relationships. 
+
+
+```{r correlations + parent student teacher plots, message=FALSE}
+ggplot(data = sat_aca_tib) + 
+  aes(x = avg_sat_score, y = response, color = `review type`) + 
+  geom_point(na.rm = TRUE) + 
+  geom_smooth(method = lm) +
+  labs(title = "SAT Scores and Academic Expectation Responses\n") + 
+  scale_color_hue(labels = c("Parent", "Student","Teacher")) + 
+  guides(color = guide_legend("Legend")) + 
+  scale_x_continuous(name = "Average SAT Score", limits = c(750, 2100)) + 
+  scale_y_continuous(name = "Average School Rating by Respondent Type", limits = c(5, 10)) +
+  facet_grid(vars(`review type`))
+        
+```
+
+## Preliminary Conclusions
+
+Though the correlation between Student perceptions of academic success and higher academic performance was low, it is clear that with Students had the strongest relationship of the three categories. This finding is logical, given that students are the most directly involved in the learning process, can best assess their progress and are the individuals completing SAT examinations. 
+
+## Future Questions
+
+Though students, parents, and teachers were viewed in the aggregate, it may be helpful to separate responses based on geographic location (ex. by borough or zip code) or by various identities (gender, racial, sexual orientation). It may also be categorize schools based on the percentage of students eligible for Free or Reduced Lunch, in ESL (English as a Second Language) classrooms, or categorized as Special Needs students. 
+
